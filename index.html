@@ -1,3 +1,4 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
 <title>Waar ik geweest ben</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -716,6 +717,13 @@ h2{font:700 .72rem/1 var(--font-body);text-transform:uppercase;letter-spacing:.0
 .years{display:flex;flex-wrap:wrap;gap:6px}
 .years button{font:500 .8rem var(--font-data);font-variant-numeric:tabular-nums;border:1px solid var(--line);background:var(--chip);color:var(--ink);border-radius:999px;padding:4px 10px;cursor:pointer}
 .years button[aria-pressed="true"]{background:var(--dot);border-color:var(--dot);color:#fff}
+.years.picked button:not(.been){opacity:.4}
+.years button.been{border-color:var(--dot);color:var(--dot);background:color-mix(in srgb,var(--dot) 14%,var(--panel));font-weight:700;box-shadow:0 0 0 1px var(--dot) inset}
+.years button.been[aria-pressed="true"]{background:var(--dot);color:#fff}
+.picked-line{margin:10px 0 0;font-size:.84rem;display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px}
+.picked-line b{font-weight:700}
+.picked-line .m{color:var(--muted)}
+.countries button.sel{background:var(--chip);box-shadow:inset 3px 0 0 var(--dot);font-weight:700}
 .segs{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px}
 .seg button:disabled{opacity:.45;cursor:not-allowed}
 .seg{display:flex;flex-wrap:wrap;border:1px solid var(--line);border-radius:8px;overflow:hidden;width:fit-content;max-width:100%}
@@ -782,6 +790,7 @@ button:focus-visible{outline:2px solid var(--dot);outline-offset:2px}
   <section>
     <h2>Per jaar</h2>
     <div class="years" id="years"></div>
+    <p class="picked-line" id="picked" hidden></p>
     <div class="row"><button class="link" id="y-all">Alle jaren</button><button class="link" id="fit">Hele wereld</button></div>
   </section>
   <section>
@@ -975,16 +984,16 @@ function draw(){
     photos += n; places++;
     if(p[9]) cc.set(p[9], (cc.get(p[9]) || 0) + n);
     if(mode === "heat"){ heatPts.push([p[0], p[1], Math.min(1, 0.25 + Math.log10(n) / 2.5)]); continue; }
-    L.circleMarker([p[0], p[1]], { renderer, radius:radius(n), color:edge, weight:.8, fillColor:fill, fillOpacity:.85 })
-      .bindPopup(() => popup(p, n)).addTo(dotLayer);
+    L.circleMarker([p[0], p[1]], { renderer, radius:radius(n), color:edge, weight:.8, fillColor:fill, fillOpacity:.85, bubblingMouseEvents:false })
+      .bindPopup(() => popup(p, n)).on("click", () => p[9] && selectCountry(p[9])).addTo(dotLayer);
   }
   for(const m of MANUAL){
     if(!manualShown(m)) continue;
     places++;
     if(!cc.has(m[1])) cc.set(m[1], 0);
     if(mode === "heat"){ heatPts.push([m[4], m[5], 0.4]); continue; }
-    L.circleMarker([m[4], m[5]], { renderer, radius:4.5, color:css("--ink"), weight:1.5, fillColor:fill, fillOpacity:1 })
-      .bindPopup(() => manualPopup(m)).addTo(dotLayer);
+    L.circleMarker([m[4], m[5]], { renderer, radius:4.5, color:css("--ink"), weight:1.5, fillColor:fill, fillOpacity:1, bubblingMouseEvents:false })
+      .bindPopup(() => manualPopup(m)).on("click", () => selectCountry(m[1])).addTo(dotLayer);
   }
   if(mode === "heat" && window.L && L.heatLayer)
     heat = L.heatLayer(heatPts, { radius:18, blur:20, minOpacity:.35, maxZoom:10, max:1,
@@ -1024,7 +1033,9 @@ function drawCountries(cc){
     b.innerHTML = `<span></span><span class="n">${n ? nf.format(n) : "zonder foto's"}</span>`;
     b.firstChild.textContent = name;
     b.title = "Zoom naar " + name;
-    b.onclick = () => zoomTo(c);
+    b.dataset.code = c;
+    if(c === selCountry) b.classList.add("sel");
+    b.onclick = () => { zoomTo(c); selectCountry(c); };
     li.appendChild(b); ul.appendChild(li);
   });
   $("more").hidden = list.length <= 10;
@@ -1058,7 +1069,69 @@ years.forEach(y => {
 });
 function syncYears(){ [...yb.children].forEach(b => b.setAttribute("aria-pressed", !!(active && active.has(+b.textContent)))); }
 $("y-all").onclick = () => { active = null; syncYears(); draw(); };
-$("fit").onclick = () => map.setView([30, 10], 2);
+$("fit").onclick = () => { map.setView([30, 10], 2); selectCountry(null); };
+
+// gekozen land: jaartallen kleuren waarin je er was
+let selCountry = null;
+const codeByName = {};
+for(const c of LABELS.countries) codeByName[c[3]] = c[2];
+for(const c in enNames) codeByName[enNames[c]] = c;
+function yearsIn(code){
+  const s = new Set();
+  for(const p of DATA.pts) if(p[9] === code) for(const y in p[3]) if(p[3][y]) s.add(+y);
+  for(const m of MANUAL) if(m[1] === code && m[3]) s.add(m[3]);
+  return s;
+}
+function selectCountry(code, nameFallback){
+  selCountry = code;
+  const box = $("picked");
+  if(!code && !nameFallback){
+    yb.classList.remove("picked");
+    [...yb.children].forEach(b => b.classList.remove("been"));
+    box.hidden = true;
+  } else {
+    const ys = code ? yearsIn(code) : new Set();
+    yb.classList.add("picked");
+    [...yb.children].forEach(b => b.classList.toggle("been", ys.has(+b.textContent)));
+    const name = code ? countryName(code, enNames[code] || nameFallback || code) : nameFallback;
+    const list = [...ys].sort((a, b) => a - b);
+    const unknown = code && MANUAL.some(m => m[1] === code && !m[3]);
+    const txt = list.length ? list.join(", ") + (unknown ? " (en een keer onbekend)" : "")
+      : unknown ? "jaar onbekend" : "nog niet geweest";
+    box.innerHTML = `<span><b></b> <span class="m"></span></span><button class="link" id="picked-x">Wis keuze</button>`;
+    box.querySelector("b").textContent = name;
+    box.querySelector(".m").textContent = "· " + txt;
+    $("picked-x").onclick = () => selectCountry(null);
+    box.hidden = false;
+  }
+  [...$("countries").querySelectorAll("button")].forEach(b => b.classList.toggle("sel", b.dataset.code === selCountry));
+}
+// klik op de kaart: welk land ligt daar?
+function inRing(x, y, r){
+  let inside = false;
+  for(let i = 0, j = r.length - 1; i < r.length; j = i++){
+    const xi = r[i][0], yi = r[i][1], xj = r[j][0], yj = r[j][1];
+    if((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+function featureAt(lat, lng){
+  lng = ((lng + 180) % 360 + 360) % 360 - 180;
+  for(const f of feats){
+    const g = f.geometry; if(!g) continue;
+    const polys = g.type === "Polygon" ? [g.coordinates] : g.type === "MultiPolygon" ? g.coordinates : [];
+    for(const poly of polys)
+      for(const x of [lng, lng + 360])
+        if(inRing(x, lat, poly[0]) && !poly.slice(1).some(h => inRing(x, lat, h))) return f;
+  }
+  return null;
+}
+map.on("click", e => {
+  const f = featureAt(e.latlng.lat, e.latlng.lng);
+  if(!f) return;
+  const name = f.properties.name, code = codeByName[name];
+  selectCountry(code || null, code ? null : name);
+});
 
 (function(){
   const G = DATA.g; if(!G || !$("added")) return;
@@ -1085,3 +1158,5 @@ setBase("map");
 // start: uitzoomen zodat alle stippen te zien zijn
 map.fitBounds(L.latLngBounds(DATA.pts.map(p => [p[0], p[1]]).concat(MANUAL.map(m => [m[4], m[5]]))), { padding:[20,20] });
 </script>
+
+</body></html>
