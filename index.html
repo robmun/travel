@@ -861,7 +861,7 @@ const df = new Intl.DateTimeFormat("nl-NL", { day:"numeric", month:"long", year:
 const fmtD = s => { if(!s) return ""; const d = new Date(s + "T12:00:00"); return isNaN(d) ? s : df.format(d); };
 const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 
-const map = L.map("map", { worldCopyJump:true, preferCanvas:true, minZoom:2, maxZoom:16, zoomSnap:.5 }).setView([30, 10], 2);
+const map = L.map("map", { worldCopyJump:true, preferCanvas:true, minZoom:2, maxZoom:16, zoomSnap:.1, zoomDelta:.5, wheelPxPerZoomLevel:180, wheelDebounceTime:30 }).setView([30, 10], 2);
 map.attributionControl.setPrefix(false).addAttribution("Kaart: Natural Earth");
 const renderer = L.canvas({ padding:.5 });
 
