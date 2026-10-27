@@ -681,6 +681,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
   --chip:#f1f4f5;
   --label:#3f4a50;
   --country-label:#8a959b;
+  --route:#1f5fbf;
   --font-display:"Familjen Grotesk", "Segoe UI", system-ui, sans-serif;
   --font-body:"Atkinson Hyperlegible", "Segoe UI", system-ui, sans-serif;
   --font-data:"IBM Plex Mono", Consolas, ui-monospace, monospace;
@@ -688,13 +689,13 @@ svg.leaflet-image-layer.leaflet-interactive path {
 @media (prefers-color-scheme: dark){
   :root:not([data-theme="light"]){
     --sea:#0f1a20; --land:#1f2a30; --land-visited:#4a2428; --border:#3a4950;
-    --dot:#ff4a5c; --dot-edge:#0f1a20; --panel:#151f24; --ink:#e7ecee; --muted:#9aa8ae; --line:#26343a; --chip:#1d2a30; --label:#c3ccd0; --country-label:#76858c;
+    --dot:#ff4a5c; --dot-edge:#0f1a20; --panel:#151f24; --ink:#e7ecee; --muted:#9aa8ae; --line:#26343a; --chip:#1d2a30; --label:#c3ccd0; --country-label:#76858c; --route:#6aa6ff;
     color-scheme:dark;
   }
 }
 :root[data-theme="dark"]{
   --sea:#0f1a20; --land:#1f2a30; --land-visited:#4a2428; --border:#3a4950;
-  --dot:#ff4a5c; --dot-edge:#0f1a20; --panel:#151f24; --ink:#e7ecee; --muted:#9aa8ae; --line:#26343a; --chip:#1d2a30; --label:#c3ccd0; --country-label:#76858c;
+  --dot:#ff4a5c; --dot-edge:#0f1a20; --panel:#151f24; --ink:#e7ecee; --muted:#9aa8ae; --line:#26343a; --chip:#1d2a30; --label:#c3ccd0; --country-label:#76858c; --route:#6aa6ff;
   color-scheme:dark;
 }
 *{box-sizing:border-box}
@@ -705,6 +706,9 @@ body{margin:0;background:var(--panel);color:var(--ink);font:15px/1.5 var(--font-
 .splitter::after{content:"";position:absolute;left:3px;top:50%;width:2px;height:36px;margin-top:-18px;border-radius:2px;background:var(--muted);opacity:.6}
 .splitter:hover,.splitter.drag{background:var(--dot)}
 .splitter:hover::after,.splitter.drag::after{background:#fff;opacity:1}
+.rnum{display:flex;align-items:center;justify-content:center;min-width:20px;height:20px;padding:0 5px;border-radius:999px;background:var(--panel);color:var(--ink);border:1.5px solid var(--route);font:700 11px/1 var(--font-data);box-shadow:0 1px 3px rgba(0,0,0,.25);transform:translate(-50%,-50%);white-space:nowrap;cursor:default}
+.rstop{width:9px;height:9px;border-radius:50%;background:var(--route);border:2px solid var(--panel);transform:translate(-50%,-50%)}
+.rstop.first{background:#1a8f4c}
 .app.dragging{user-select:none;cursor:col-resize}
 aside{overflow-y:auto;padding:22px 20px 26px;display:flex;flex-direction:column;gap:22px;min-width:0}
 #map{height:100%;background:var(--sea)}
@@ -1038,6 +1042,7 @@ function draw(){
   $("t-countries").textContent = nf.format(cc.size);
   drawCountries(cc);
   if(typeof drawTrips === "function") drawTrips();
+  if(typeof drawRoute === "function") drawRoute();
 }
 function popup(p, n){
   const land = countryName(p[9], enNames[p[9]] || "");
@@ -1278,10 +1283,80 @@ function selectTrip(t){
   activeTrip = t;
   draw();
   if(!t) return;
-  const ll = [...t.pts].map(p => [p[0], p[1]]).concat(t.manual.map(m => [m[4], m[5]]));
+  const ll = [...t.pts].filter(p => t.main.includes(p[9])).map(p => [p[0], p[1]]).concat(t.manual.map(m => [m[4], m[5]]));
   if(ll.length) map.fitBounds(L.latLngBounds(ll), { padding:[40,40], maxZoom:11 });
   if(window.matchMedia("(max-width:760px)").matches) $("map").scrollIntoView({ behavior:"smooth" });
 }
+
+// route van de gekozen reis: plaatsen in de volgorde waarin je er was
+map.createPane("route").style.zIndex = 390;
+map.getPane("route").style.pointerEvents = "none";
+const routeLayer = L.layerGroup().addTo(map), routeNums = L.layerGroup().addTo(map);
+const addDays = (s, n) => { const d = D(s); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); };
+function tripStops(t){
+  if(t._stops) return t._stops;
+  const lo = addDays(t.s, -2), hi = addDays(t.e, 2), groups = new Map();
+  for(const p of t.pts){
+    const day = p[7] >= lo && p[7] <= hi ? p[7] : p[8] >= lo && p[8] <= hi ? p[8] : null;
+    if(!day || !t.main.includes(p[9])) continue; // overstappen in andere landen niet in de route
+    const name = DATA.places[p[12]] || "?", k = day + "|" + name;
+    let a = groups.get(k); if(!a){ a = { day, name, la:0, lo:0, w:0 }; groups.set(k, a); }
+    a.la += p[0] * p[2]; a.lo += p[1] * p[2]; a.w += p[2];
+  }
+  const byDay = new Map();
+  for(const a of groups.values()){ a.la /= a.w; a.lo /= a.w; if(!byDay.has(a.day)) byDay.set(a.day, []); byDay.get(a.day).push(a); }
+  const dist = (a, b) => { const c = Math.cos((a.la + b.la) / 2 * Math.PI / 180); return (a.la - b.la) ** 2 + ((a.lo - b.lo) * c) ** 2; };
+  const km = (a, b) => 111.2 * Math.sqrt(dist(a, b));
+  const seq = []; let last = null;
+  for(const day of [...byDay.keys()].sort()){
+    // binnen één dag weten we de volgorde niet: steeds naar de dichtstbijzijnde plaats
+    const items = byDay.get(day);
+    while(items.length){
+      let k = 0;
+      if(last) items.forEach((it, i) => { if(dist(last, it) < dist(last, items[k])) k = i; });
+      else items.forEach((it, i) => { if(it.w > items[k].w) k = i; });
+      const it = items.splice(k, 1)[0];
+      if(last && (last.name === it.name || km(last, it) < 15)){
+        // samenvoegen: de plaats met de meeste foto's geeft de naam
+        if(it.w > last.top){ last.name = it.name; last.top = it.w; }
+        const w = last.w + it.w;
+        last.la = (last.la * last.w + it.la * it.w) / w; last.lo = (last.lo * last.w + it.lo * it.w) / w; last.w = w;
+        last.days.add(it.day); continue;
+      }
+      last = { name:it.name, la:it.la, lo:it.lo, w:it.w, top:it.w, day:it.day, days:new Set([it.day]) }; seq.push(last);
+    }
+  }
+  return (t._stops = seq);
+}
+function drawRoute(){
+  routeLayer.clearLayers(); routeNums.clearLayers();
+  if(!activeTrip || !activeTrip.s || mode !== "pts") return;
+  const st = tripStops(activeTrip);
+  if(st.length < 2) return;
+  const col = css("--route");
+  L.polyline(st.map(s => [s.la, s.lo]), { pane:"route", color:col, weight:2.5, opacity:.85, interactive:false }).addTo(routeLayer);
+  st.forEach((s, i) => L.marker([s.la, s.lo], { pane:"route", interactive:false, keyboard:false,
+    icon:L.divIcon({ className:"", iconSize:null, html:`<div class="rstop${i === 0 ? " first" : ""}"></div>` }) }).addTo(routeLayer));
+  drawRouteNums();
+}
+function drawRouteNums(){
+  routeNums.clearLayers();
+  if(!activeTrip || !activeTrip.s || mode !== "pts") return;
+  const st = tripStops(activeTrip), taken = [];
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+  for(let i = 0; i < st.length - 1; i++){
+    const a = map.latLngToContainerPoint([st[i].la, st[i].lo]), b = map.latLngToContainerPoint([st[i + 1].la, st[i + 1].lo]);
+    if(a.distanceTo(b) < 30) continue; // te kort om een nummer te zetten; zoom verder in
+    const x = (a.x + b.x) / 2, y = (a.y + b.y) / 2;
+    if(taken.some(r => Math.abs(r[0] - x) < 24 && Math.abs(r[1] - y) < 20)) continue;
+    taken.push([x, y]);
+    const when = dShort.format(D(st[i + 1].day));
+    const tip = `${i + 1}. ${st[i].name} → ${st[i + 1].name} (${when})`;
+    L.marker(map.containerPointToLatLng([x, y]), { keyboard:false, interactive:true, bubblingMouseEvents:false,
+      icon:L.divIcon({ className:"", iconSize:null, html:`<div class="rnum" title="${esc(tip)}">${i + 1}</div>` }) }).addTo(routeNums);
+  }
+}
+map.on("zoomend", drawRouteNums);
 
 // klik op de kaart: welk land ligt daar?
 function inRing(x, y, r){
