@@ -869,8 +869,8 @@ function landStyle(f){
 // ondergrond: eenvoudige kaart (zit in de pagina), of kaartbeelden van internet
 const attrOSM = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>';
 const tiles = {
-  light: L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", { maxZoom:19, subdomains:"abcd", attribution:attrOSM }),
-  dark:  L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", { maxZoom:19, subdomains:"abcd", attribution:attrOSM }),
+  light: L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}", { maxZoom:19, attribution:"Kaart &copy; Esri, HERE, Garmin, &copy; OpenStreetMap" }),
+  dark:  L.layerGroup([L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}", { maxZoom:16, attribution:"Kaart &copy; Esri" }), L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}", { maxZoom:16, pane:"labels" })]),
   sat:   L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", { maxZoom:19, attribution:"Beelden &copy; Esri" }),
   satLabels: L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}", { maxZoom:19, pane:"labels" })
 };
@@ -883,7 +883,7 @@ function tilesFailed(){
   $("base-note").hidden = false;
   setBase("simple");
 }
-Object.values(tiles).forEach(t => { t.on("tileerror", tilesFailed); t.on("tileload", () => { tilesWork = true; }); });
+Object.values(tiles).forEach(t => (t.eachLayer ? t.getLayers() : [t]).forEach(l => { l.on("tileerror", tilesFailed); l.on("tileload", () => { tilesWork = true; }); }));
 function setBase(b){
   if(b !== "simple" && tilesWork === false) b = "simple";
   base = b;
