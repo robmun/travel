@@ -714,7 +714,7 @@ aside{overflow-y:auto;padding:22px 20px 26px;display:flex;flex-direction:column;
 #map{height:100%;background:var(--sea)}
 h1{font:700 1.7rem/1.1 var(--font-display);margin:0;text-wrap:balance;letter-spacing:-.01em}
 .lede{margin:6px 0 0;color:var(--muted);font-size:.9rem}
-.meta{margin:8px 0 0;color:var(--muted);font-family:var(--font-data);font-size:.76rem;font-variant-numeric:tabular-nums}
+.meta{margin-top:10px}
 h2{font:700 .72rem/1 var(--font-body);text-transform:uppercase;letter-spacing:.09em;color:var(--muted);margin:0 0 10px}
 .totals{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
 .totals b{display:block;font:500 1.35rem/1.15 var(--font-data);font-variant-numeric:tabular-nums}
@@ -790,8 +790,7 @@ button:focus-visible{outline:2px solid var(--dot);outline-offset:2px}
 <aside>
   <header>
     <h1>Travelmap Robert</h1>
-    <p class="lede">Elke rode stip is een plek waar ik foto's heb gemaakt, op basis van de locatiegegevens in mijn foto's.</p>
-    <p class="meta" id="meta">Versie <span id="version"></span></p>
+    <p class="lede">Deze kaart is gebaseerd op de locatiegegevens die bij foto's gemaakt met een iPhone automatisch worden vastgelegd. Je kunt selecteren op jaartal, land, reis enzovoort. Per land kun je ook alle bezochte plaatsen in dat land zien.</p>
   </header>
   <section>
     <div class="totals">
@@ -837,6 +836,7 @@ button:focus-visible{outline:2px solid var(--dot);outline-offset:2px}
     <button class="more" id="more" hidden>Toon alle landen</button>
   </section>
   <p class="note" id="note"></p>
+  <p class="note meta" id="meta"></p>
 </aside>
 <div class="splitter" id="splitter" role="separator" aria-orientation="vertical" aria-label="Breedte van het paneel" tabindex="0" title="Sleep om de breedte te veranderen, dubbelklik om terug te zetten"></div>
 <div id="map" role="region" aria-label="Wereldkaart met fotolocaties"></div>
@@ -1418,7 +1418,7 @@ map.on("click", e => {
     `<ul>${rows.map(([c, n]) => `<li><span>${countryName(c, enNames[c] || c)}</span><span class="m">${isNew(c) ? "niet in eigen archief" : ""}</span><span class="m">${nf.format(n)}</span></li>`).join("")}</ul>`;
 })();
 
-const VERSION = "26.10.1";
+const VERSION = "26.10.2";
 {
   let last = "";
   for(const p of DATA.pts) if(p[8] && p[8] > last) last = p[8];
