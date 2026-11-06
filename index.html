@@ -831,6 +831,29 @@ button:focus-visible{outline:2px solid var(--dot);outline-offset:2px}
 .share-box button.b{font:700 .82rem var(--font-body);padding:7px 12px;border:0;border-radius:7px;background:var(--dot);color:#fff;cursor:pointer}
 .share-box button.b2{background:var(--chip);color:var(--ink);border:1px solid var(--line)}
 .share-note{margin:10px 0 0;font-size:.8rem;border:1px solid var(--dot);border-radius:8px;padding:6px 10px;color:var(--ink)}
+
+/* zoeken */
+.search{width:100%;font:16px var(--font-body);padding:9px 12px;border:1px solid var(--line);border-radius:10px;background:var(--chip);color:var(--ink);box-sizing:border-box}
+.results{list-style:none;margin:8px 0 0;padding:0;display:flex;flex-direction:column;gap:2px}
+.results li{border-radius:8px;padding:6px 8px}
+.results li:hover{background:var(--chip)}
+.results .go{display:block;width:100%;border:0;background:none;padding:0;text-align:left;color:var(--ink);font:700 .9rem var(--font-body);cursor:pointer}
+.results .go .k{font-weight:400;color:var(--muted)}
+.results .d{display:block;font:400 .76rem var(--font-data);color:var(--muted);font-variant-numeric:tabular-nums}
+.results .tr{display:flex;flex-wrap:wrap;gap:2px 10px;margin-top:2px}
+.results .tr .link{font-size:.78rem}
+.results .empty{color:var(--muted);font-size:.84rem}
+/* deellinks */
+.share-box .opts{display:flex;flex-direction:column;gap:6px}
+.share-box .opts label{display:flex;gap:8px;align-items:flex-start}
+.share-box .shares{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.share-box .shares li{display:flex;justify-content:space-between;align-items:center;gap:10px;border-top:1px solid var(--line);padding-top:8px}
+.share-box .shares .btns{flex:none;flex-wrap:nowrap}
+/* reis afspelen */
+.play-hud{background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:10px;padding:8px 12px;font:400 .86rem var(--font-body);box-shadow:0 2px 8px rgba(0,0,0,.25);display:flex;gap:12px;align-items:center;max-width:calc(100vw - 40px)}
+.play-hud .link{font-size:.84rem}
+.trip-on .acts{display:flex;gap:14px;flex-wrap:wrap}
+.pop-g{display:block;margin-top:4px}
 </style>
 <div class="app">
 <aside>
@@ -847,6 +870,11 @@ button:focus-visible{outline:2px solid var(--dot);outline-offset:2px}
       <div><b id="t-places">0</b><span>plekken</span></div>
       <div><b id="t-countries">0</b><span>landen</span></div>
     </div>
+  </section>
+  <section>
+    <h2>Zoeken</h2>
+    <input class="search" id="q" type="search" placeholder="Zoek een plaats of land" aria-label="Zoek een plaats of land" autocomplete="off" enterkeyhint="search">
+    <ul class="results" id="results"></ul>
   </section>
   <section>
     <h2>Weergave</h2>
@@ -1040,6 +1068,7 @@ function countFor(p){
 function radius(n){ return Math.min(9, 2.6 + Math.log10(n) * 2); }
 let mode = "pts", heat = null;
 function draw(){
+  if(playing) stopPlay(false);
   dotLayer.clearLayers();
   if(heat){ map.removeLayer(heat); heat = null; }
   const heatPts = [];
@@ -1082,7 +1111,8 @@ function popup(p, n){
   const where = [place, land].filter(Boolean).join(", ");
   return `<div class="pop-n">${esc(where)}</div><div class="pop-m">${nf.format(n)} foto${n === 1 ? "" : "'s"}</div>` +
     (period ? `<div class="pop-m">${period}</div>` : "") + split +
-    `<a href="https://www.google.com/maps?q=${p[0]},${p[1]}" target="_blank" rel="noopener">Bekijk in Google Maps</a>`;
+    `<a href="https://www.google.com/maps?q=${p[0]},${p[1]}" target="_blank" rel="noopener">Bekijk in Google Maps</a>` +
+    (VIEW === "own" && place ? `<a class="pop-g" href="${gPhotos(place + (p[4] === p[5] ? " " + p[4] : ""))}" target="_blank" rel="noopener">Foto's in Google Foto's</a>` : "");
 }
 
 function manualPopup(m){
@@ -1222,7 +1252,9 @@ function drawPlaces(){
 const dShort = new Intl.DateTimeFormat("nl-NL", { day:"numeric", month:"short" });
 const dShortY = new Intl.DateTimeFormat("nl-NL", { day:"numeric", month:"short", year:"numeric" });
 const D = s => new Date(s + "T12:00:00");
-const TRIP_LIST = TRIPS.map(t => ({ s:t[0], e:t[1], n:t[2], cc:t[3], pts:new Set(t[4].map(i => DATA.pts[i])), manual:[] }));
+const TRIP_LIST = TRIPS.map((t, idx) => ({ idx, s:t[0], e:t[1], n:t[2], cc:t[3], pts:new Set(t[4].map(i => DATA.pts[i])), manual:[] }));
+const VIEW = window.TM_VIEW || "own";
+const gPhotos = q => `https://photos.google.com/search/${encodeURIComponent(q)}`;
 for(const m of MANUAL){
   if(!m[3]) continue;
   const hit = TRIP_LIST.find(t => t.s && t.cc.some(c => c[0] === m[1]) && (+t.s.slice(0,4) === m[3] || +t.e.slice(0,4) === m[3]));
@@ -1302,9 +1334,12 @@ function drawTrips(){
   const on = $("trip-on");
   if(activeTrip){
     on.hidden = false;
-    on.innerHTML = `<span>Je ziet alleen: <b></b></span><button class="link" id="trip-x">Toon alles</button>`;
+    const canPlay = activeTrip.s && mode === "pts" && tripStops(activeTrip).length > 1;
+    const gq = activeTrip.title + " " + (activeTrip.s ? activeTrip.s.slice(0, 4) : activeTrip.year);
+    on.innerHTML = `<span>Je ziet alleen: <b></b></span><span class="acts">${canPlay ? '<button class="link" id="trip-play">▶ Speel reis af</button>' : ""}${VIEW === "own" ? `<a class="link" href="${gPhotos(gq)}" target="_blank" rel="noopener">Google Foto's</a>` : ""}<button class="link" id="trip-x">Toon alles</button></span>`;
     on.querySelector("b").textContent = `${activeTrip.title}, ${activeTrip.when}`;
     $("trip-x").onclick = () => selectTrip(null);
+    if(canPlay) $("trip-play").onclick = () => playTrip(activeTrip);
   } else on.hidden = true;
 }
 $("trips-more").onclick = () => { showAllTrips = !showAllTrips; drawTrips(); };
@@ -1361,7 +1396,7 @@ function tripStops(t){
 // kleuren voor routes; meerdere reizen in één land krijgen elk een eigen kleur
 const ROUTE_COLORS = ["#1f6feb", "#f76707", "#2f9e44", "#ae3ec9", "#e03131", "#0c8599", "#f59f00", "#5f3dc4", "#c2255c", "#74b816"];
 function routeTrips(){
-  if(mode !== "pts") return [];
+  if(mode !== "pts" || playing) return [];
   if(selCountry && !activeTrip)
     return TRIP_LIST.filter(t => t.s && t.cc.some(c => c[0] === selCountry) && tripVisible(t)).map((t, i) => ({ t, col:ROUTE_COLORS[i % ROUTE_COLORS.length] }));
   if(activeTrip && activeTrip.s) return [{ t:activeTrip, col:tripColor(activeTrip) }];
@@ -1448,7 +1483,117 @@ map.on("click", e => {
     `<ul>${rows.map(([c, n]) => `<li><span>${countryName(c, enNames[c] || c)}</span><span class="m">${isNew(c) ? "niet in eigen archief" : ""}</span><span class="m">${nf.format(n)}</span></li>`).join("")}</ul>`;
 })();
 
-const VERSION = "26.11.6";
+// ---------- zoeken op plaats of land ----------
+const norm = s => String(s).normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
+const escH = s => String(s).replace(/[&<>"]/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;" }[c]));
+const SEARCH = (() => {
+  const tripsOf = new Map();
+  for(const t of TRIP_LIST) for(const p of t.pts){ if(!tripsOf.has(p)) tripsOf.set(p, new Set()); tripsOf.get(p).add(t); }
+  const m = new Map();
+  const get = (name, cc) => { const k = name + "|" + cc; let a = m.get(k); if(!a){ a = { name, cc, n:0, first:null, last:null, ys:new Set(), ll:[], trips:new Set() }; m.set(k, a); } return a; };
+  for(const p of DATA.pts){
+    let name = DATA.places[p[12]]; if(!name) continue;
+    if(name.startsWith("bij ")) name = name.slice(4);
+    const a = get(name, p[9]);
+    a.n += p[2]; a.ll.push([p[0], p[1]]);
+    if(p[7] && (!a.first || p[7] < a.first)) a.first = p[7];
+    if(p[8] && (!a.last || p[8] > a.last)) a.last = p[8];
+    for(const y in p[3]) if(p[3][y]) a.ys.add(+y);
+    for(const t of tripsOf.get(p) || []) a.trips.add(t);
+  }
+  for(const t of TRIP_LIST) for(const mm of t.manual) get(mm[0], mm[1]).trips.add(t);
+  for(const mm of MANUAL){ const a = get(mm[0], mm[1]); a.ll.push([mm[4], mm[5]]); if(mm[3]) a.ys.add(mm[3]); }
+  const places = [...m.values()]; places.forEach(a => { a.key = norm(a.name); a.land = countryName(a.cc, enNames[a.cc] || a.cc || ""); });
+  const codes = new Set([...DATA.pts.map(p => p[9]), ...MANUAL.map(mm => mm[1])].filter(Boolean));
+  const countries = [...codes].map(c => ({ code:c, name:countryName(c, enNames[c] || c) })).map(c => (c.key = norm(c.name), c));
+  return { places, countries };
+})();
+function runSearch(){
+  const q = norm($("q").value), ul = $("results");
+  ul.innerHTML = "";
+  if(q.length < 2) return;
+  const score = k => k === q ? 0 : k.startsWith(q) ? 1 : k.split(/[\s\-']/).some(w => w.startsWith(q)) ? 2 : k.includes(q) ? 3 : 9;
+  const cs = SEARCH.countries.map(c => [score(c.key), c]).filter(x => x[0] < 9).sort((a, b) => a[0] - b[0]).slice(0, 3);
+  const ps = SEARCH.places.map(a => [score(a.key), a]).filter(x => x[0] < 9).sort((a, b) => a[0] - b[0] || b[1].n - a[1].n).slice(0, 8 - cs.length);
+  if(!cs.length && !ps.length){ ul.innerHTML = `<li class="empty">Niets gevonden voor “${escH($("q").value.trim())}”.</li>`; return; }
+  const toMap = () => { if(window.matchMedia("(max-width:760px)").matches) $("map").scrollIntoView({ behavior:"smooth" }); };
+  for(const [, c] of cs){
+    const li = document.createElement("li");
+    const ys = [...yearsIn(c.code)].sort((a, b) => a - b);
+    const nTrips = TRIP_LIST.filter(t => t.cc.some(x => x[0] === c.code)).length;
+    li.innerHTML = `<button class="go">${escH(c.name)} <span class="k">· land</span></button><span class="d">${ys.length ? (ys.length > 4 ? `${ys[0]}–${ys[ys.length - 1]}, ${ys.length} verschillende jaren` : ys.join(", ")) : "jaar onbekend"}${nTrips ? ` · ${nTrips} ${nTrips === 1 ? "reis" : "reizen"}` : ""}</span>`;
+    li.querySelector(".go").onclick = () => { activeTrip = null; zoomTo(c.code); selectCountry(c.code); draw(); toMap(); };
+    ul.appendChild(li);
+  }
+  for(const [, a] of ps){
+    const li = document.createElement("li");
+    const ys = [...a.ys].sort((x, y) => x - y);
+    const when = a.first && a.first === a.last ? fmtD(a.first) : ys.length > 4 ? `${ys[0]}–${ys[ys.length - 1]}` : ys.join(", ");
+    const bits = [when || "jaar onbekend", a.n ? `${nf.format(a.n)} foto${a.n === 1 ? "" : "'s"}` : "zelf toegevoegd"];
+    const trips = [...a.trips].sort((x, y) => y.sortKey.localeCompare(x.sortKey));
+    li.innerHTML = `<button class="go">${escH(a.name)} <span class="k">· ${escH(a.land)}</span></button><span class="d">${escH(bits.join(" · "))}</span>` +
+      (trips.length ? `<span class="tr">${trips.slice(0, 6).map((t, i) => `<button class="link" data-t="${i}">${escH(t.title === a.land ? t.when : t.title + ", " + t.when)}</button>`).join("")}${trips.length > 6 ? `<span class="d">en nog ${trips.length - 6}</span>` : ""}</span>` : "");
+    li.querySelector(".go").onclick = () => { map.fitBounds(L.latLngBounds(a.ll), { padding:[40, 40], maxZoom:12 }); toMap(); };
+    li.querySelectorAll("[data-t]").forEach(b => b.onclick = () => selectTrip(trips[+b.dataset.t]));
+    ul.appendChild(li);
+  }
+}
+$("q").addEventListener("input", runSearch);
+$("q").addEventListener("keydown", e => { if(e.key === "Enter"){ const b = $("results").querySelector(".go"); if(b){ b.click(); $("q").blur(); } } });
+
+// ---------- reis afspelen ----------
+let playing = null;
+const playLayer = L.layerGroup().addTo(map);
+const HudCtl = L.Control.extend({ options:{ position:"bottomleft" }, onAdd(){ const d = L.DomUtil.create("div", "play-hud"); d.id = "play-hud"; d.hidden = true; L.DomEvent.disableClickPropagation(d); return d; } });
+new HudCtl().addTo(map);
+function stopPlay(redraw = true){
+  if(playing && playing.raf) cancelAnimationFrame(playing.raf);
+  playing = null; playLayer.clearLayers(); $("play-hud").hidden = true;
+  if(redraw) drawRoute();
+}
+function playTrip(t){
+  stopPlay(false);
+  const st = tripStops(t); if(st.length < 2) return;
+  const col = tripColor(t);
+  playing = { raf:0 };
+  routeLayer.clearLayers(); routeNums.clearLayers();
+  map.fitBounds(L.latLngBounds(st.map(s => [s.la, s.lo])), { padding:[60, 60], maxZoom:10 });
+  if(window.matchMedia("(max-width:760px)").matches) $("map").scrollIntoView({ behavior:"smooth" });
+  const opt = { pane:"route", interactive:false, lineJoin:"round" };
+  const under = L.polyline([], { ...opt, color:"#fff", weight:7, opacity:.85 }).addTo(playLayer);
+  const line = L.polyline([], { ...opt, color:col, weight:4, opacity:1 }).addTo(playLayer);
+  const stop = (s, r) => L.circleMarker([s.la, s.lo], { pane:"route", interactive:false, radius:r, color:"#fff", weight:2, fillColor:col, fillOpacity:1 }).addTo(playLayer);
+  stop(st[0], 5);
+  const dot = L.circleMarker([st[0].la, st[0].lo], { pane:"route", interactive:false, radius:9, color:"#fff", weight:3, fillColor:col, fillOpacity:1 }).addTo(playLayer);
+  const hud = $("play-hud"), total = t.days || 1;
+  const show = (s, done) => {
+    const day = Math.round((D(s.day) - D(t.s)) / 864e5) + 1;
+    hud.innerHTML = done
+      ? `<span><b>${escH(t.title)}</b> · ${total} dagen, ${st.length} plaatsen</span><button class="link" id="play-again">Opnieuw</button><button class="link" id="play-stop">Sluiten</button>`
+      : `<span><b>Dag ${Math.max(1, day)}</b> van ${total} · ${escH(dShort.format(D(s.day)))} · ${escH(s.name)}</span><button class="link" id="play-stop">Stop</button>`;
+    $("play-stop").onclick = () => stopPlay();
+    if(done) $("play-again").onclick = () => playTrip(t);
+  };
+  hud.hidden = false; show(st[0]);
+  const SEG = Math.max(450, 1300 * Math.min(1, 20 / st.length)), HOLD = SEG * .45;
+  const done = [[st[0].la, st[0].lo]];
+  let i = 0, t0 = performance.now() + 700;
+  const frame = now => {
+    if(!playing) return;
+    const k = Math.min(1, Math.max(0, (now - t0) / SEG)), e = k < .5 ? 2 * k * k : 1 - (-2 * k + 2) ** 2 / 2;
+    const a = st[i], b = st[i + 1], cur = [a.la + (b.la - a.la) * e, a.lo + (b.lo - a.lo) * e];
+    line.setLatLngs([...done, cur]); under.setLatLngs([...done, cur]); dot.setLatLng(cur);
+    if(k >= 1){
+      done.push([b.la, b.lo]); stop(b, 5); dot.bringToFront(); i++;
+      if(i >= st.length - 1){ show(b, true); playing.raf = 0; return; }
+      show(b); t0 = now + HOLD;
+    }
+    playing.raf = requestAnimationFrame(frame);
+  };
+  playing.raf = requestAnimationFrame(frame);
+}
+
+const VERSION = "26.11.7";
 {
   let last = "";
   for(const p of DATA.pts) if(p[8] && p[8] > last) last = p[8];
@@ -1524,19 +1669,26 @@ map.fitBounds(L.latLngBounds(DATA.pts.map(p => [p[0], p[1]]).concat(MANUAL.map(m
   "use strict";
   const $ = id => document.getElementById(id);
   const b64 = s => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((s.length + 3) % 4)), c => c.charCodeAt(0));
-  const enc64 = u => btoa(String.fromCharCode(...u));
-  const aes = raw => crypto.subtle.importKey("raw", raw, "AES-GCM", false, ["decrypt"]);
+  const enc64 = u => { let s = ""; for(let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode(...u.subarray(i, i + 0x8000)); return btoa(s); };
+  const url64 = u => enc64(u).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  const esc = t => String(t).replace(/[&<>"]/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;" }[c]));
+  const aes = (raw, use) => crypto.subtle.importKey("raw", raw, "AES-GCM", false, use || ["decrypt"]);
   const unwrap = async (raw, w) => new Uint8Array(await crypto.subtle.decrypt({ name:"AES-GCM", iv:b64(w.iv) }, await aes(raw), b64(w.wrapped)));
-  const KEY = "tm-key";
-  const store = { get(){ try{ return localStorage.getItem(KEY); }catch(e){ return null; } }, set(v){ try{ localStorage.setItem(KEY, v); }catch(e){} }, del(){ try{ localStorage.removeItem(KEY); }catch(e){} } };
+  const seal = async (raw, bytes) => { const iv = crypto.getRandomValues(new Uint8Array(12)); return { iv, ct:new Uint8Array(await crypto.subtle.encrypt({ name:"AES-GCM", iv }, await aes(raw, ["encrypt"]), bytes)) }; };
+  const ls = k => ({ get(){ try{ return localStorage.getItem(k); }catch(e){ return null; } }, set(v){ try{ localStorage.setItem(k, v); }catch(e){} }, del(){ try{ localStorage.removeItem(k); }catch(e){} } });
+  const store = ls("tm-key"), tok = ls("tm-gh-token");
+  const dfmt = new Intl.DateTimeFormat("nl-NL", { day:"numeric", month:"long", hour:"2-digit", minute:"2-digit" });
   const fail = (msg, keepForm) => { $("lock-err").textContent = msg; $("pw-go").disabled = false; if(!keepForm){ $("lock-form").querySelectorAll("input,label,button").forEach(e => e.hidden = true); } };
+  const gunzip = async bytes => new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"))).text();
+  const gzip = async text => new Uint8Array(await new Response(new Blob([text]).stream().pipeThrough(new CompressionStream("gzip"))).arrayBuffer());
 
-  async function open(dk){
-    const r = await fetch("data.enc", { cache:"no-cache" });
+  async function open(key, file, view){
+    const r = await fetch(file, { cache:"no-cache" });
     if(!r.ok) throw new Error("data");
     const buf = new Uint8Array(await r.arrayBuffer());
-    const plain = await crypto.subtle.decrypt({ name:"AES-GCM", iv:buf.slice(0, 12) }, await aes(dk), buf.slice(12));
-    const text = await new Response(new Blob([plain]).stream().pipeThrough(new DecompressionStream("gzip"))).text();
+    const plain = await crypto.subtle.decrypt({ name:"AES-GCM", iv:buf.slice(0, 12) }, await aes(key), buf.slice(12));
+    const text = await gunzip(plain);
+    window.TM_VIEW = view;
     const s = document.createElement("script");
     s.textContent = '"use strict";\n' + text + "\n" + $("app-code").textContent;
     document.body.appendChild(s);
@@ -1550,7 +1702,7 @@ map.fitBounds(L.latLngBounds(DATA.pts.map(p => [p[0], p[1]]).concat(MANUAL.map(m
     let dk;
     try{ dk = await unwrap(bits, K); }catch(e){ return fail("Wachtwoord klopt niet.", true); }
     if(remember) store.set(enc64(dk));
-    await open(dk);
+    await open(dk, "data.enc", "own");
     owner(dk);
   }
 
@@ -1562,66 +1714,186 @@ map.fitBounds(L.latLngBounds(DATA.pts.map(p => [p[0], p[1]]).concat(MANUAL.map(m
     if(!r.ok) return fail(expired);
     const j = await r.json();
     if(new Date(j.expires) <= new Date()) return fail(expired);
-    let dk;
-    try{ dk = await unwrap(b64(sk), j); }catch(e){ return fail(expired); }
-    await open(dk);
-    const d = new Intl.DateTimeFormat("nl-NL", { day:"numeric", month:"long", hour:"2-digit", minute:"2-digit" }).format(new Date(j.expires));
-    $("share-note").textContent = "Kijkversie, te bekijken tot " + d + ".";
+    try{
+      if(j.data) await open(b64(sk), "share/" + id + ".enc", "share");
+      else await open(await unwrap(b64(sk), j), "data.enc", "share");
+    }catch(e){ return fail(expired); }
+    const what = typeof SHARE_LABEL !== "undefined" && SHARE_LABEL ? SHARE_LABEL + ". " : "";
+    $("share-note").textContent = "Kijkversie" + (what ? ": " + what : ", ") + (what ? "Te bekijken" : "te bekijken") + " tot " + dfmt.format(new Date(j.expires)) + ".";
     $("share-note").hidden = false;
   }
 
+  // ---------- eigen versie: deellinks maken en beheren via de GitHub-API ----------
+  const REPO = "robmun/travel", API = `https://api.github.com/repos/${REPO}/contents/share`, DAYS = 7;
+  const gh = (path, opt = {}) => fetch(API + path, { ...opt, headers:{ "Authorization":"Bearer " + tok.get(), "Accept":"application/vnd.github+json", ...(opt.headers || {}) } });
+  const put = async (name, bytes, msg) => {
+    const r = await gh("/" + name, { method:"PUT", body:JSON.stringify({ message:msg, content:enc64(bytes) }) });
+    if(r.status === 401 || r.status === 403 || r.status === 404) throw new Error("token");
+    if(!r.ok) throw new Error("http " + r.status);
+  };
 
-  // eigen versie: deellinks maken via de GitHub-API (token staat alleen op dit apparaat)
-  const REPO = "robmun/travel", TOKEN = "tm-gh-token", DAYS = 7;
-  const tok = { get(){ try{ return localStorage.getItem(TOKEN); }catch(e){ return null; } }, set(v){ try{ localStorage.setItem(TOKEN, v); }catch(e){} }, del(){ try{ localStorage.removeItem(TOKEN); }catch(e){} } };
-  const url64 = u => enc64(u).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-  const esc = t => String(t).replace(/[&<>"]/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;" }[c]));
+  // deel van de data: alleen een reis, land of jaren
+  function subset(scope){
+    const old = DATA.pts, idxMap = new Map(), pts = [], placeMap = new Map(), places = [];
+    const Y = scope.kind === "years" ? new Set(scope.ys) : null;
+    const tripSet = scope.kind === "trip" ? new Set(TRIPS[scope.idx][4]) : null;
+    old.forEach((p, i) => {
+      let q = null;
+      if(tripSet){ if(tripSet.has(i)) q = p.slice(); }
+      else if(scope.kind === "country"){ if(p[9] === scope.code) q = p.slice(); }
+      else if(Y){
+        const yc = {}, gy = {}; let n = 0, gn = 0;
+        for(const y in p[3]) if(Y.has(+y) && p[3][y]){ yc[y] = p[3][y]; n += p[3][y]; }
+        for(const y in (p[11] || {})) if(Y.has(+y) && p[11][y]){ gy[y] = p[11][y]; gn += p[11][y]; }
+        if(n){
+          const ys = Object.keys(yc).map(Number);
+          const inY = d => d && Y.has(+d.slice(0, 4)) ? d : null;
+          q = [p[0], p[1], n, yc, Math.min(...ys), Math.max(...ys), p[6], inY(p[7]), inY(p[8]), p[9], gn, gy, p[12]];
+        }
+      }
+      if(!q) return;
+      if(!placeMap.has(q[12])){ placeMap.set(q[12], places.length); places.push(DATA.places[q[12]]); }
+      q[12] = placeMap.get(q[12]);
+      idxMap.set(i, pts.length); pts.push(q);
+    });
+    const cnt = new Map(); let total = 0, from = "", to = "";
+    for(const p of pts){ cnt.set(p[9], (cnt.get(p[9]) || 0) + p[2]); total += p[2]; if(p[7] && (!from || p[7] < from)) from = p[7]; if(p[8] && p[8] > to) to = p[8]; }
+    const en = Object.fromEntries(DATA.countries.map(c => [c[0], c[1]]));
+    const countries = [...cnt.entries()].sort((a, b) => b[1] - a[1]).map(([c, n]) => [c, en[c] || c, n]);
+    const trips = [];
+    TRIPS.forEach((t, j) => {
+      const ix = t[4].filter(i => idxMap.has(i)).map(i => idxMap.get(i));
+      if(!ix.length) return;
+      if(scope.kind === "trip" && j !== scope.idx) return;
+      if(Y && !Y.has(+t[0].slice(0, 4)) && !Y.has(+t[1].slice(0, 4))) return;
+      if(scope.kind === "country" && !t[3].some(c => c[0] === scope.code)) return;
+      trips.push([t[0], t[1], t[2], t[3], ix]);
+    });
+    let manual = [];
+    if(scope.kind === "country") manual = MANUAL.filter(m => m[1] === scope.code);
+    else if(Y) manual = MANUAL.filter(m => Y.has(m[3]));
+    else if(tripSet){ const t = TRIPS[scope.idx]; manual = MANUAL.filter(m => m[3] && t[3].some(c => c[0] === m[1]) && (+t[0].slice(0, 4) === m[3] || +t[1].slice(0, 4) === m[3])); }
+    const data = { pts, countries, total, records:total, skipped:0, places, g:{ withLoc:0, noLoc:0, removed:0, added:0, from:from || "", to:to || "" } };
+    return `const WORLD = ${JSON.stringify(WORLD)};\nconst LABELS = ${JSON.stringify(LABELS)};\nconst DATA = ${JSON.stringify(data)};\nconst TRIPS = ${JSON.stringify(trips)};\nconst MANUAL = ${JSON.stringify(manual)};\nconst SHARE_LABEL = ${JSON.stringify(scope.label)};\n`;
+  }
+
   function owner(dk){
     $("relock").hidden = false;
     $("share-row").hidden = false;
     const box = $("share-box");
-    const askToken = () => {
+    const close = () => { box.hidden = true; box.innerHTML = ""; };
+    const tokenError = () => { tok.del(); box.innerHTML = "<p>Het GitHub-token werkt niet (verlopen of onvoldoende rechten). Voer een nieuw token in.</p>"; setTimeout(() => askToken(chooser), 2500); };
+
+    function askToken(next){
       box.hidden = false;
       box.innerHTML = `<p><b>Eenmalig instellen op dit apparaat</b></p>
         <p class="m">Om deellinks te maken heeft deze pagina een GitHub-token nodig dat alleen in de repo <b>travel</b> mag schrijven. Maak er een aan via <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">GitHub → Fine-grained token</a>: kies bij <i>Repository access</i> alleen <b>robmun/travel</b> en zet bij <i>Permissions</i> → <i>Contents</i> op <b>Read and write</b>. Het token blijft alleen op dit apparaat.</p>
         <input id="gh-tok" type="password" placeholder="github_pat_…" autocomplete="off" aria-label="GitHub-token">
-        <div class="btns"><button class="b" id="gh-save">Opslaan en link maken</button><button class="b b2" id="gh-cancel">Annuleren</button></div>`;
-      $("gh-cancel").onclick = () => { box.hidden = true; };
-      $("gh-save").onclick = () => { const v = $("gh-tok").value.trim(); if(v){ tok.set(v); make(); } };
-    };
-    async function make(){
-      const t = tok.get();
-      if(!t) return askToken();
-      box.hidden = false; box.innerHTML = "<p>Deellink wordt gemaakt…</p>";
+        <div class="btns"><button class="b" id="gh-save">Opslaan</button><button class="b b2" id="gh-cancel">Annuleren</button></div>`;
+      $("gh-cancel").onclick = close;
+      $("gh-save").onclick = () => { const v = $("gh-tok").value.trim(); if(v){ tok.set(v); next(); } };
+    }
+
+    // keuze: wat deel je?
+    function chooser(){
+      if(!tok.get()) return askToken(chooser);
+      box.hidden = false;
+      const opts = [];
+      const tr = typeof activeTrip !== "undefined" ? activeTrip : null;
+      if(tr && tr.idx != null) opts.push({ kind:"trip", idx:tr.idx, label:`${tr.title}, ${tr.when}`, txt:`Alleen de reis: ${tr.title}, ${tr.when}` });
+      if(typeof selCountry !== "undefined" && selCountry){ const nm = countryName(selCountry, selCountry); opts.push({ kind:"country", code:selCountry, label:nm, txt:`Alleen het land: ${nm}` }); }
+      if(typeof active !== "undefined" && active && active.size){ const ys = [...active].sort(); opts.push({ kind:"years", ys, label:(ys.length > 1 ? "De jaren " : "Het jaar ") + ys.join(", "), txt:`Alleen ${ys.length > 1 ? "de jaren" : "het jaar"} ${ys.join(", ")}` }); }
+      opts.push({ kind:"all", label:"", txt:"Alles" });
+      box.innerHTML = `<p><b>Wat wil je delen?</b></p>
+        <div class="opts">${opts.map((o, i) => `<label><input type="radio" name="scope" value="${i}" ${i === 0 ? "checked" : ""}> ${esc(o.txt)}</label>`).join("")}</div>
+        ${opts.length === 1 ? '<p class="m">Tip: kies eerst een reis, land of jaar als je alleen dat wilt delen.</p>' : ""}
+        <div class="btns"><button class="b" id="sh-go">Maak link (${DAYS} dagen)</button><button class="b b2" id="sh-cancel">Annuleren</button></div>
+        <button class="link" id="sh-manage">Mijn deellinks beheren</button>`;
+      $("sh-cancel").onclick = close;
+      $("sh-manage").onclick = manage;
+      $("sh-go").onclick = () => make(opts[+box.querySelector("input[name=scope]:checked").value]);
+    }
+
+    async function make(scope){
+      box.innerHTML = "<p>Deellink wordt gemaakt…</p>";
       try{
-        const sk = crypto.getRandomValues(new Uint8Array(32)), iv = crypto.getRandomValues(new Uint8Array(12));
-        const key = await crypto.subtle.importKey("raw", sk, "AES-GCM", false, ["encrypt"]);
-        const wrapped = new Uint8Array(await crypto.subtle.encrypt({ name:"AES-GCM", iv }, key, dk));
+        const sk = crypto.getRandomValues(new Uint8Array(32));
         const id = url64(crypto.getRandomValues(new Uint8Array(6)));
         const exp = new Date(Date.now() + DAYS * 864e5);
-        const body = { expires: exp.toISOString().replace(/\.\d+Z$/, "+00:00"), name: "", iv: url64(iv), wrapped: url64(wrapped) };
-        const r = await fetch(`https://api.github.com/repos/${REPO}/contents/share/${id}.json`, {
-          method: "PUT",
-          headers: { "Authorization": "Bearer " + t, "Accept": "application/vnd.github+json" },
-          body: JSON.stringify({ message: "Deellink toegevoegd", content: btoa(JSON.stringify(body, null, 1) + "\n") })
-        });
-        if(r.status === 401 || r.status === 403 || r.status === 404){ tok.del(); box.innerHTML = "<p>Het GitHub-token werkt niet (verlopen of onvoldoende rechten). Probeer het opnieuw met een nieuw token.</p>"; return setTimeout(askToken, 2500); }
-        if(!r.ok) throw new Error(r.status);
-        const link = location.origin + location.pathname + "#s=" + id + "." + url64(sk);
-        const d = new Intl.DateTimeFormat("nl-NL", { day:"numeric", month:"long", hour:"2-digit", minute:"2-digit" }).format(exp);
-        box.innerHTML = `<p><b>Deellink gemaakt</b>, geldig tot ${esc(d)}.</p>
-          <input id="share-link" readonly value="${esc(link)}" aria-label="Deellink">
-          <div class="btns">${navigator.share ? '<button class="b" id="share-send">Delen…</button>' : ""}<button class="b ${navigator.share ? "b2" : ""}" id="share-copy">Kopieer</button><button class="b b2" id="share-close">Sluiten</button></div>
-          <p class="m">De link werkt over 1 à 2 minuten, zodra GitHub de pagina heeft bijgewerkt. Na ${DAYS} dagen verloopt hij vanzelf.</p>`;
-        if($("share-send")) $("share-send").onclick = () => navigator.share({ title: "Travelmap Robert", url: link }).catch(() => {});
-        $("share-copy").onclick = async () => { try{ await navigator.clipboard.writeText(link); $("share-copy").textContent = "Gekopieerd"; }catch(e){ $("share-link").select(); } };
-        $("share-close").onclick = () => { box.hidden = true; };
+        const meta = await seal(dk, new TextEncoder().encode(JSON.stringify({ label:scope.label || "Alles", sk:url64(sk) })));
+        const body = { v:2, expires:exp.toISOString().replace(/\.\d+Z$/, "+00:00"), meta:{ iv:url64(meta.iv), ct:url64(meta.ct) } };
+        if(scope.kind === "all"){
+          const w = await seal(sk, dk);
+          body.iv = url64(w.iv); body.wrapped = url64(w.ct);
+        } else {
+          const d = await seal(sk, await gzip(subset(scope)));
+          const bytes = new Uint8Array(12 + d.ct.length); bytes.set(d.iv); bytes.set(d.ct, 12);
+          await put(id + ".enc", bytes, "Deellink toegevoegd (data)");
+          body.data = true;
+        }
+        await put(id + ".json", new TextEncoder().encode(JSON.stringify(body, null, 1) + "\n"), "Deellink toegevoegd");
+        showLink(location.origin + location.pathname + "#s=" + id + "." + url64(sk), exp, scope.label || "Alles", true);
       }catch(e){
+        if(e.message === "token") return tokenError();
         box.innerHTML = "<p>Het maken van de deellink is mislukt. Controleer je internetverbinding en probeer het opnieuw.</p>";
       }
     }
-    $("share-make").onclick = make;
+
+    function showLink(link, exp, label, fresh){
+      box.hidden = false;
+      box.innerHTML = `<p><b>${fresh ? "Deellink gemaakt" : "Deellink"}</b>: ${esc(label)}, geldig tot ${esc(dfmt.format(exp))}.</p>
+        <input id="share-link" readonly value="${esc(link)}" aria-label="Deellink">
+        <div class="btns">${navigator.share ? '<button class="b" id="share-send">Delen…</button>' : ""}<button class="b ${navigator.share ? "b2" : ""}" id="share-copy">Kopieer</button><button class="b b2" id="share-close">Sluiten</button></div>
+        ${fresh ? `<p class="m">De link werkt over 1 à 2 minuten, zodra GitHub de pagina heeft bijgewerkt. Na ${DAYS} dagen verloopt hij vanzelf.</p>` : ""}
+        <button class="link" id="sh-manage">Mijn deellinks beheren</button>`;
+      if($("share-send")) $("share-send").onclick = () => navigator.share({ title:"Travelmap Robert", url:link }).catch(() => {});
+      $("share-copy").onclick = async () => { try{ await navigator.clipboard.writeText(link); $("share-copy").textContent = "Gekopieerd"; }catch(e){ $("share-link").select(); } };
+      $("share-close").onclick = close;
+      $("sh-manage").onclick = manage;
+    }
+
+    async function manage(){
+      if(!tok.get()) return askToken(manage);
+      box.hidden = false; box.innerHTML = "<p>Deellinks worden opgehaald…</p>";
+      try{
+        const r = await gh("");
+        if(r.status === 401 || r.status === 403) return tokenError();
+        const files = r.status === 404 ? [] : await r.json();
+        const sha = Object.fromEntries(files.map(f => [f.name, f.sha]));
+        const rows = [];
+        for(const f of files.filter(f => f.name.endsWith(".json"))){
+          const id = f.name.slice(0, -5);
+          const j = await (await gh("/" + f.name, { headers:{ "Accept":"application/vnd.github.raw+json" } })).json();
+          let label = "Alles (oudere link, niet opnieuw te kopiëren)", sk = null;
+          if(j.meta){ try{ const m = JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt({ name:"AES-GCM", iv:b64(j.meta.iv) }, await aes(dk), b64(j.meta.ct)))); label = m.label; sk = m.sk; }catch(e){} }
+          rows.push({ id, exp:new Date(j.expires), label, sk });
+        }
+        rows.sort((a, b) => b.exp - a.exp);
+        const now = new Date();
+        box.innerHTML = `<p><b>Mijn deellinks</b></p>` + (rows.length ? `<ul class="shares">${rows.map((x, i) => `<li><span><b>${esc(x.label)}</b><br><span class="m">${x.exp > now ? "geldig tot " + esc(dfmt.format(x.exp)) : "verlopen, wordt binnen een uur verwijderd"}</span></span><span class="btns">${x.sk && x.exp > now ? `<button class="b b2" data-copy="${i}">Link</button>` : ""}<button class="b b2" data-del="${i}">Intrekken</button></span></li>`).join("")}</ul>` : `<p class="m">Je hebt geen actieve deellinks.</p>`) +
+          `<div class="btns"><button class="b" id="sh-new">Nieuwe deellink</button><button class="b b2" id="share-close">Sluiten</button></div>`;
+        $("sh-new").onclick = chooser;
+        $("share-close").onclick = close;
+        box.querySelectorAll("[data-copy]").forEach(b => b.onclick = () => { const x = rows[+b.dataset.copy]; showLink(location.origin + location.pathname + "#s=" + x.id + "." + x.sk, x.exp, x.label, false); });
+        box.querySelectorAll("[data-del]").forEach(b => b.onclick = async () => {
+          if(b.dataset.sure !== "1"){ b.dataset.sure = "1"; b.textContent = "Zeker?"; return; }
+          const x = rows[+b.dataset.del]; b.disabled = true; b.textContent = "Bezig…";
+          try{
+            for(const n of [x.id + ".json", x.id + ".enc"]) if(sha[n]){
+              const d = await gh("/" + n, { method:"DELETE", body:JSON.stringify({ message:"Deellink ingetrokken", sha:sha[n] }) });
+              if(!d.ok) throw new Error(d.status);
+            }
+            manage();
+          }catch(e){ b.textContent = "Mislukt"; }
+        });
+      }catch(e){
+        box.innerHTML = "<p>Ophalen van je deellinks is mislukt. Controleer je internetverbinding.</p>";
+      }
+    }
+
+    $("share-make").onclick = chooser;
   }
+
   $("relock").addEventListener("click", () => { store.del(); tok.del(); location.reload(); });
   $("lock-form").addEventListener("submit", e => {
     e.preventDefault(); $("pw-go").disabled = true; $("lock-err").textContent = "";
@@ -1634,7 +1906,7 @@ map.fitBounds(L.latLngBounds(DATA.pts.map(p => [p[0], p[1]]).concat(MANUAL.map(m
   const saved = store.get();
   if(saved){
     const dk = Uint8Array.from(atob(saved), c => c.charCodeAt(0));
-    open(dk).then(() => owner(dk)).catch(() => { store.del(); $("lock-err").textContent = ""; });
+    open(dk, "data.enc", "own").then(() => owner(dk)).catch(() => { store.del(); $("lock-err").textContent = ""; });
   }
 })();
 </script>

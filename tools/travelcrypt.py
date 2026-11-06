@@ -4,7 +4,8 @@
 De leesbare data (data.js) wordt NOOIT gecommit. Op GitHub staan alleen:
   data.enc    gzip(data.js), versleuteld met AES-256-GCM met een vaste datasleutel (DK)
   keys.json   DK, versleuteld met een sleutel afgeleid van het wachtwoord (PBKDF2-SHA256)
-  share/*.json  DK, versleuteld met een losse deelsleutel die alleen in de deellink staat
+  share/<id>.json  vervaldatum + DK (of, bij een deel van de data, share/<id>.enc met eigen sleutel)
+                   versleuteld met een deelsleutel die alleen in de deellink staat
 
 Gebruik (wachtwoord via omgevingsvariabele TRAVEL_PW):
   travelcrypt.py init               nieuwe DK + keys.json + data.enc maken uit data.js
@@ -78,8 +79,12 @@ def main(a):
         print(f"geldig tot {exp.isoformat()}")
     elif cmd == "cleanup":
         now = dt.datetime.now(dt.timezone.utc)
-        for f in sorted((ROOT / "share").glob("*.json")):
+        d = ROOT / "share"
+        for f in sorted(d.glob("*.json")):
             if dt.datetime.fromisoformat(json.loads(f.read_text())["expires"]) <= now:
+                f.unlink(); print("verwijderd", f.name)
+        for f in sorted(d.glob("*.enc")):
+            if not f.with_suffix(".json").exists():
                 f.unlink(); print("verwijderd", f.name)
     else:
         sys.exit(__doc__)
