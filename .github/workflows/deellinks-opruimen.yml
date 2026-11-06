@@ -1,0 +1,22 @@
+name: Verlopen deellinks opruimen
+on:
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          pip install -q cryptography
+          python3 tools/travelcrypt.py cleanup
+          if [ -n "$(git status --porcelain share)" ]; then
+            git config user.name "github-actions"
+            git config user.email "github-actions@users.noreply.github.com"
+            git add -A share
+            git commit -m "Verlopen deellinks verwijderd"
+            git push
+          fi
