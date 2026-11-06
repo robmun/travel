@@ -818,6 +818,13 @@ button:focus-visible{outline:2px solid var(--dot);outline-offset:2px}
 .lock button{font:700 .95rem var(--font-body);padding:10px 14px;border:0;border-radius:8px;background:var(--dot);color:#fff;cursor:pointer}
 .lock button:disabled{opacity:.6}
 .lock .err{color:var(--dot);font-weight:700;min-height:1.2em}
+.share-box{margin-top:10px;border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:.84rem;display:flex;flex-direction:column;gap:8px}
+.share-box p{margin:0}
+.share-box .m{color:var(--muted);font-size:.78rem}
+.share-box input{font:14px var(--font-data);padding:7px 9px;border:1px solid var(--line);border-radius:6px;background:var(--chip);color:var(--ink);width:100%}
+.share-box .btns{display:flex;gap:8px;flex-wrap:wrap}
+.share-box button.b{font:700 .82rem var(--font-body);padding:7px 12px;border:0;border-radius:7px;background:var(--dot);color:#fff;cursor:pointer}
+.share-box button.b2{background:var(--chip);color:var(--ink);border:1px solid var(--line)}
 .share-note{margin:10px 0 0;font-size:.8rem;border:1px solid var(--dot);border-radius:8px;padding:6px 10px;color:var(--ink)}
 </style>
 <div class="app">
@@ -826,6 +833,8 @@ button:focus-visible{outline:2px solid var(--dot);outline-offset:2px}
     <h1>Travelmap Robert</h1>
     <p class="lede">Deze kaart is gebaseerd op de locatiegegevens die bij foto's gemaakt met een iPhone automatisch worden vastgelegd. Je kunt selecteren op jaartal, land, reis enzovoort. Per land kun je ook alle bezochte plaatsen in dat land zien.</p>
     <p class="share-note" id="share-note" hidden></p>
+    <div class="row" id="share-row" hidden><button class="link" id="share-make">Deellink maken (7 dagen)</button></div>
+    <div class="share-box" id="share-box" hidden></div>
   </header>
   <section>
     <div class="totals">
@@ -1434,7 +1443,7 @@ map.on("click", e => {
     `<ul>${rows.map(([c, n]) => `<li><span>${countryName(c, enNames[c] || c)}</span><span class="m">${isNew(c) ? "niet in eigen archief" : ""}</span><span class="m">${nf.format(n)}</span></li>`).join("")}</ul>`;
 })();
 
-const VERSION = "26.11.3";
+const VERSION = "26.11.4";
 {
   let last = "";
   for(const p of DATA.pts) if(p[8] && p[8] > last) last = p[8];
@@ -1537,7 +1546,7 @@ map.fitBounds(L.latLngBounds(DATA.pts.map(p => [p[0], p[1]]).concat(MANUAL.map(m
     try{ dk = await unwrap(bits, K); }catch(e){ return fail("Wachtwoord klopt niet.", true); }
     if(remember) store.set(enc64(dk));
     await open(dk);
-    $("relock").hidden = false;
+    owner(dk);
   }
 
   async function withShare(id, sk){
@@ -1556,7 +1565,59 @@ map.fitBounds(L.latLngBounds(DATA.pts.map(p => [p[0], p[1]]).concat(MANUAL.map(m
     $("share-note").hidden = false;
   }
 
-  $("relock").addEventListener("click", () => { store.del(); location.reload(); });
+
+  // eigen versie: deellinks maken via de GitHub-API (token staat alleen op dit apparaat)
+  const REPO = "robmun/travel", TOKEN = "tm-gh-token", DAYS = 7;
+  const tok = { get(){ try{ return localStorage.getItem(TOKEN); }catch(e){ return null; } }, set(v){ try{ localStorage.setItem(TOKEN, v); }catch(e){} }, del(){ try{ localStorage.removeItem(TOKEN); }catch(e){} } };
+  const url64 = u => enc64(u).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  const esc = t => String(t).replace(/[&<>"]/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;" }[c]));
+  function owner(dk){
+    $("relock").hidden = false;
+    $("share-row").hidden = false;
+    const box = $("share-box");
+    const askToken = () => {
+      box.hidden = false;
+      box.innerHTML = `<p><b>Eenmalig instellen op dit apparaat</b></p>
+        <p class="m">Om deellinks te maken heeft deze pagina een GitHub-token nodig dat alleen in de repo <b>travel</b> mag schrijven. Maak er een aan via <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">GitHub → Fine-grained token</a>: kies bij <i>Repository access</i> alleen <b>robmun/travel</b> en zet bij <i>Permissions</i> → <i>Contents</i> op <b>Read and write</b>. Het token blijft alleen op dit apparaat.</p>
+        <input id="gh-tok" type="password" placeholder="github_pat_…" autocomplete="off" aria-label="GitHub-token">
+        <div class="btns"><button class="b" id="gh-save">Opslaan en link maken</button><button class="b b2" id="gh-cancel">Annuleren</button></div>`;
+      $("gh-cancel").onclick = () => { box.hidden = true; };
+      $("gh-save").onclick = () => { const v = $("gh-tok").value.trim(); if(v){ tok.set(v); make(); } };
+    };
+    async function make(){
+      const t = tok.get();
+      if(!t) return askToken();
+      box.hidden = false; box.innerHTML = "<p>Deellink wordt gemaakt…</p>";
+      try{
+        const sk = crypto.getRandomValues(new Uint8Array(32)), iv = crypto.getRandomValues(new Uint8Array(12));
+        const key = await crypto.subtle.importKey("raw", sk, "AES-GCM", false, ["encrypt"]);
+        const wrapped = new Uint8Array(await crypto.subtle.encrypt({ name:"AES-GCM", iv }, key, dk));
+        const id = url64(crypto.getRandomValues(new Uint8Array(6)));
+        const exp = new Date(Date.now() + DAYS * 864e5);
+        const body = { expires: exp.toISOString().replace(/\.\d+Z$/, "+00:00"), name: "", iv: url64(iv), wrapped: url64(wrapped) };
+        const r = await fetch(`https://api.github.com/repos/${REPO}/contents/share/${id}.json`, {
+          method: "PUT",
+          headers: { "Authorization": "Bearer " + t, "Accept": "application/vnd.github+json" },
+          body: JSON.stringify({ message: "Deellink toegevoegd", content: btoa(JSON.stringify(body, null, 1) + "\n") })
+        });
+        if(r.status === 401 || r.status === 403 || r.status === 404){ tok.del(); box.innerHTML = "<p>Het GitHub-token werkt niet (verlopen of onvoldoende rechten). Probeer het opnieuw met een nieuw token.</p>"; return setTimeout(askToken, 2500); }
+        if(!r.ok) throw new Error(r.status);
+        const link = location.origin + location.pathname + "#s=" + id + "." + url64(sk);
+        const d = new Intl.DateTimeFormat("nl-NL", { day:"numeric", month:"long", hour:"2-digit", minute:"2-digit" }).format(exp);
+        box.innerHTML = `<p><b>Deellink gemaakt</b>, geldig tot ${esc(d)}.</p>
+          <input id="share-link" readonly value="${esc(link)}" aria-label="Deellink">
+          <div class="btns">${navigator.share ? '<button class="b" id="share-send">Delen…</button>' : ""}<button class="b ${navigator.share ? "b2" : ""}" id="share-copy">Kopieer</button><button class="b b2" id="share-close">Sluiten</button></div>
+          <p class="m">De link werkt over 1 à 2 minuten, zodra GitHub de pagina heeft bijgewerkt. Na ${DAYS} dagen verloopt hij vanzelf.</p>`;
+        if($("share-send")) $("share-send").onclick = () => navigator.share({ title: "Travelmap Robert", url: link }).catch(() => {});
+        $("share-copy").onclick = async () => { try{ await navigator.clipboard.writeText(link); $("share-copy").textContent = "Gekopieerd"; }catch(e){ $("share-link").select(); } };
+        $("share-close").onclick = () => { box.hidden = true; };
+      }catch(e){
+        box.innerHTML = "<p>Het maken van de deellink is mislukt. Controleer je internetverbinding en probeer het opnieuw.</p>";
+      }
+    }
+    $("share-make").onclick = make;
+  }
+  $("relock").addEventListener("click", () => { store.del(); tok.del(); location.reload(); });
   $("lock-form").addEventListener("submit", e => {
     e.preventDefault(); $("pw-go").disabled = true; $("lock-err").textContent = "";
     withPassword($("pw").value, $("remember").checked).catch(() => fail("Openen mislukt. Probeer het opnieuw.", true));
@@ -1567,7 +1628,8 @@ map.fitBounds(L.latLngBounds(DATA.pts.map(p => [p[0], p[1]]).concat(MANUAL.map(m
   if(m){ withShare(m[1], m[2]).catch(() => fail("Openen mislukt. Probeer het opnieuw.")); return; }
   const saved = store.get();
   if(saved){
-    open(Uint8Array.from(atob(saved), c => c.charCodeAt(0))).then(() => { $("relock").hidden = false; }).catch(() => { store.del(); $("lock-err").textContent = ""; });
+    const dk = Uint8Array.from(atob(saved), c => c.charCodeAt(0));
+    open(dk).then(() => owner(dk)).catch(() => { store.del(); $("lock-err").textContent = ""; });
   }
 })();
 </script>

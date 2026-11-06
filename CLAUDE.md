@@ -7,7 +7,9 @@
 - Werken met de data: `tools/travelcrypt.py` met het wachtwoord in `TRAVEL_PW`
   (vraag het aan Robert, schrijf het nergens op in de repo).
   - Data bijwerken: `decrypt` → `data.js` aanpassen → `encrypt`. Deellinks blijven werken.
-  - Deellink maken: `share 7 "naam"` → commit + push van `share/<id>.json`, geef Robert de link.
+  - Deellink maken: Robert doet dit zelf met de knop "Deellink maken (7 dagen)" in de pagina
+    (schrijft via de GitHub-API met een fine-grained token dat alleen op zijn apparaat staat).
+    Via de terminal kan ook: `share 7 "naam"` → commit + push van `share/<id>.json`, geef Robert de link.
   - Wachtwoord wijzigen: `passwd NIEUW`.
 - Verlopen deellinks worden elk uur verwijderd door `.github/workflows/deellinks-opruimen.yml`.
   De pagina controleert de vervaldatum ook zelf.
