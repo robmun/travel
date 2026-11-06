@@ -1434,7 +1434,7 @@ map.on("click", e => {
     `<ul>${rows.map(([c, n]) => `<li><span>${countryName(c, enNames[c] || c)}</span><span class="m">${isNew(c) ? "niet in eigen archief" : ""}</span><span class="m">${nf.format(n)}</span></li>`).join("")}</ul>`;
 })();
 
-const VERSION = "26.11.2";
+const VERSION = "26.11.3";
 {
   let last = "";
   for(const p of DATA.pts) if(p[8] && p[8] > last) last = p[8];
