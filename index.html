@@ -834,6 +834,10 @@ button:focus-visible{outline:2px solid var(--dot);outline-offset:2px}
 
 /* zoeken */
 .search{width:100%;font:16px var(--font-body);padding:9px 12px;border:1px solid var(--line);border-radius:10px;background:var(--chip);color:var(--ink);box-sizing:border-box}
+.qwrap{position:relative}
+.qwrap .search{padding-right:44px}
+.search::-webkit-search-cancel-button{-webkit-appearance:none;display:none}
+.qx{position:absolute;right:6px;top:50%;transform:translateY(-50%);width:32px;height:32px;border:0;border-radius:50%;background:var(--line);color:var(--ink);font:400 1.3rem/1 var(--font-body);cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0 0 2px}
 .results{list-style:none;margin:8px 0 0;padding:0;display:flex;flex-direction:column;gap:2px}
 .results li{border-radius:8px;padding:6px 8px}
 .results li:hover{background:var(--chip)}
@@ -873,7 +877,7 @@ button:focus-visible{outline:2px solid var(--dot);outline-offset:2px}
   </section>
   <section>
     <h2>Zoeken</h2>
-    <input class="search" id="q" type="search" placeholder="Zoek een plaats of land" aria-label="Zoek een plaats of land" autocomplete="off" enterkeyhint="search">
+    <div class="qwrap"><input class="search" id="q" type="search" placeholder="Zoek een plaats of land" aria-label="Zoek een plaats of land" autocomplete="off" enterkeyhint="search"><button class="qx" id="q-x" type="button" aria-label="Zoekveld leegmaken" hidden>×</button></div>
     <ul class="results" id="results"></ul>
   </section>
   <section>
@@ -1538,7 +1542,8 @@ function runSearch(){
     ul.appendChild(li);
   }
 }
-$("q").addEventListener("input", runSearch);
+$("q").addEventListener("input", () => { $("q-x").hidden = !$("q").value; runSearch(); });
+$("q-x").onclick = () => { $("q").value = ""; $("q-x").hidden = true; runSearch(); $("q").focus(); };
 $("q").addEventListener("keydown", e => { if(e.key === "Enter"){ const b = $("results").querySelector(".go"); if(b){ b.click(); $("q").blur(); } } });
 
 // ---------- reis afspelen ----------
@@ -1593,7 +1598,7 @@ function playTrip(t){
   playing.raf = requestAnimationFrame(frame);
 }
 
-const VERSION = "26.11.7";
+const VERSION = "26.11.8";
 {
   let last = "";
   for(const p of DATA.pts) if(p[8] && p[8] > last) last = p[8];
